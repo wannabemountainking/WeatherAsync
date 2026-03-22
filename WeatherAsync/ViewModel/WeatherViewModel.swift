@@ -24,13 +24,14 @@ enum NetworkError: Error, LocalizedError {
     }
 }
 
+@MainActor
 @Observable
 final class WeatherViewModel {
 
-    var weatherData: Weather?
+    var weathers: [Weather] = []
+    var currentWeatherData: Weather?
     var isLoading: Bool = false
     var errorMessage: String = ""
-    var cityName: String = "서울"
     
     var cities: [String: (lat: Double, lon: Double)] = [
         "서울": (37.5665, 126.9780),
@@ -40,8 +41,28 @@ final class WeatherViewModel {
         "뉴욕": (40.7128, -74.0060)
     ]
     
+    func loadAllCities() async -> [Weather] {
+        return await withTaskGroup(of: Weather?.self, returning: [Weather].self) { group in
+            var results: [Weather] = []
+            for cityName in cities.keys {
+                group.addTask {
+                    await self.fetchWeatherData(cityName: cityName)
+                }
+            }
+            for await result in group {
+                if let weather = result {
+                    results.append(weather)
+                }
+            }
+            return results
+        }
+    }
 
-    func fetchWeatherData(cityName: String) async {
+    func fetchWeatherData(cityName: String) async -> Weather? {
+        defer {
+            self.isLoading = false
+        }
+        
         self.isLoading = true
         do {
             guard let cityLocation = self.cities[cityName] else {
@@ -51,22 +72,26 @@ final class WeatherViewModel {
             guard let url = URL(string: endPoint) else {
                 throw NetworkError.invalidURL
             }
-            try await self.downloadWeatherInfo(url: url)
+            return try await self.downloadWeatherInfo(cityName: cityName, lat: cityLocation.lat, lon: cityLocation.lon, url: url)
         } catch {
             self.errorMessage = error.localizedDescription
         }
-        self.isLoading = false
+        return nil
     }
     
-    private func downloadWeatherInfo(url: URL) async throws {
+    private func downloadWeatherInfo(cityName: String, lat: Double, lon: Double, url: URL) async throws -> Weather {
         let (weather, response) = try await URLSession.shared.data(from: url)
         guard let response = response as? HTTPURLResponse,
               response.statusCode >= 200 && response.statusCode < 300 else {
             throw NetworkError.invalidResponse
         }
-        guard let weatherInfo = try? JSONDecoder().decode(Weather.self, from: weather) else {
+        guard var weatherInfo = try? JSONDecoder().decode(Weather.self, from: weather) else {
             throw NetworkError.invalidData
         }
-        self.weatherData = weatherInfo
+        weatherInfo.cityName = cityName
+        weatherInfo.latitude = lat
+        weatherInfo.longitude = lon
+        return weatherInfo
+        
     }
 }

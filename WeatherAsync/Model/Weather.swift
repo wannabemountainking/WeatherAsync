@@ -13,8 +13,10 @@ import Foundation
 
 
 // MARK: - Weather
-struct Weather: Codable {
-    let latitude, longitude: Double
+struct Weather: Identifiable, Codable {
+    let id = UUID()
+    var cityName: String = "서울"
+    var latitude, longitude: Double
     let current: Current
     let hourly: Hourly
     
