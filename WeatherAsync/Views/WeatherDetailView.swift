@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+
 struct WeatherDetailView: View {
     @State private var vm: WeatherViewModel = .init()
     var weatherInfo: Weather?
@@ -17,14 +18,25 @@ struct WeatherDetailView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(cityName ?? "장소가 목록에 없습니다")
-                Text("\(weatherInfo?.currentTemp ?? "0.0") ℃")
-                Text("최고  \(weatherInfo?.highestTemp ?? "0.0") ℃ / 최저  \(weatherInfo?.lowestTemp ?? "0.0") ℃")
+            
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .background(Color(uiColor: UIColor(red: 28.0, green: 109.0, blue: 208.0, alpha: 1.0)))
+                    .padding(16)
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(cityName ?? "장소가 목록에 없습니다")
+                    Text("\(weatherInfo?.currentTemp ?? "0.0") ℃")
+                    Text("최고  \(weatherInfo?.highestTemp ?? "0.0") ℃ / 최저  \(weatherInfo?.lowestTemp ?? "0.0") ℃")
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(16)
             }
-            .padding(.horizontal)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding(16)
+            
+            
+            
     
             HStack {
                 VStack(spacing: 10) {
@@ -57,6 +69,13 @@ struct WeatherDetailView: View {
             
             Spacer()
         }
+    }
+}
+
+extension Color {
+    init(hex: String) {
+        var hexArr: [String] = []
+        
     }
 }
 
