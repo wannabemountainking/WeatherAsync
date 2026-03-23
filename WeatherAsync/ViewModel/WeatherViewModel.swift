@@ -6,6 +6,8 @@
 //
 
 import Foundation
+import CoreLocation
+import MapKit
 
 
 enum NetworkError: Error, LocalizedError {
@@ -13,6 +15,7 @@ enum NetworkError: Error, LocalizedError {
     case invalidResponse
     case invalidData
     case invalidCityName
+    case invalidGeometricInformation
     
     var errorDescription: String? {
         switch self {
@@ -20,6 +23,7 @@ enum NetworkError: Error, LocalizedError {
         case .invalidURL: return "URL 오류 발생"
         case .invalidData: return "데이터 디코딩 에러 발생"
         case .invalidResponse: return "서버 응답 에러 발생"
+        case .invalidGeometricInformation: return "지역 위치 정보 오류"
         }
     }
 }
@@ -29,50 +33,68 @@ enum NetworkError: Error, LocalizedError {
 final class WeatherViewModel {
 
     var weathers: [Weather] = []
-    var currentWeatherData: Weather?
-    var isLoading: Bool = false
+    var isLoading: Bool = true
+    var isSearching: Bool = false
     var errorMessage: String = ""
+    var currentWeatherData: Weather?
     
-    var cities: [String: (lat: Double, lon: Double)] = [
-        "서울": (37.5665, 126.9780),
-        "부산": (35.1796, 129.0756),
-        "제주": (33.4996, 126.5312),
-        "도쿄": (35.6762, 139.6503),
-        "뉴욕": (40.7128, -74.0060)
-    ]
+    var cityNames: [String] = ["서울", "부산", "제주", "도쿄", "뉴욕"]
     
-    func loadAllCities() async -> [Weather] {
-        return await withTaskGroup(of: Weather?.self, returning: [Weather].self) { group in
-            var results: [Weather] = []
-            for cityName in cities.keys {
-                group.addTask {
-                    await self.fetchWeatherData(cityName: cityName)
-                }
-            }
-            for await result in group {
-                if let weather = result {
-                    results.append(weather)
-                }
-            }
-            return results
+    init() {
+        Task {
+            await self.loadAllWeather()
         }
+    }
+    
+//    func loadAllWeathers() async {
+//        async let seoul = fetchWeatherData(cityName: "서울")
+//        async let busan = fetchWeatherData(cityName: "부산")
+//        async let jeju = fetchWeatherData(cityName: "제주")
+//        async let tokyo = fetchWeatherData(cityName: "도쿄")
+//        async let newyork = fetchWeatherData(cityName: "뉴욕")
+//        
+//        let fiveCityWeathers = await [seoul, busan, jeju, tokyo, newyork]
+//        self.weathers = fiveCityWeathers.compactMap { $0 }
+//    }
+    
+    func loadAllWeather() async {
+        isLoading = true
+        await withTaskGroup(of: (index: Int, weather: Weather?).self) { group in
+            for (index, cityName) in cityNames.enumerated() {
+                group.addTask {
+                    let cityWeather = await self.fetchWeatherData(cityName: cityName)
+                    return (index, cityWeather)
+                }
+            }
+            var weathersOfCities: [(index: Int, weather: Weather)] = []
+            for await (index, weather) in group {
+                if let weather {
+                    weathersOfCities.append((index, weather))
+                }
+            }
+            self.weathers = weathersOfCities.sorted { $0.index < $1.index }.map { $0.weather }
+            self.currentWeatherData = self.weathers.first
+            print(errorMessage)
+        }
+        isLoading = false
     }
 
     func fetchWeatherData(cityName: String) async -> Weather? {
         defer {
-            self.isLoading = false
+            self.isSearching = false
         }
         
-        self.isLoading = true
+        self.isSearching = true
         do {
-            guard let cityLocation = self.cities[cityName] else {
-                throw NetworkError.invalidCityName
+            guard let request = MKGeocodingRequest(addressString: cityName),
+                  let coordinates = try await request.mapItems.first?.location.coordinate else {
+                throw NetworkError.invalidGeometricInformation
             }
-            let endPoint = "https://api.open-meteo.com/v1/forecast?latitude=\(cityLocation.lat)&longitude=\(cityLocation.lon)&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m&timezone=auto"
+            let endPoint = "https://api.open-meteo.com/v1/forecast?latitude=\(coordinates.latitude)&longitude=\(coordinates.longitude)&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m&timezone=auto&hourly=temperature_2m"
             guard let url = URL(string: endPoint) else {
                 throw NetworkError.invalidURL
             }
-            return try await self.downloadWeatherInfo(cityName: cityName, lat: cityLocation.lat, lon: cityLocation.lon, url: url)
+            return try await self.downloadWeatherInfo(cityName: cityName, lat: coordinates.latitude, lon: coordinates.longitude, url: url)
         } catch {
             self.errorMessage = error.localizedDescription
         }
@@ -85,6 +107,9 @@ final class WeatherViewModel {
               response.statusCode >= 200 && response.statusCode < 300 else {
             throw NetworkError.invalidResponse
         }
+        if let jsonString = String(data: weather, encoding: .utf8) {
+            print(jsonString)
+        }
         guard var weatherInfo = try? JSONDecoder().decode(Weather.self, from: weather) else {
             throw NetworkError.invalidData
         }
@@ -92,6 +117,5 @@ final class WeatherViewModel {
         weatherInfo.latitude = lat
         weatherInfo.longitude = lon
         return weatherInfo
-        
     }
 }
